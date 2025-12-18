@@ -13,7 +13,7 @@ The application consists of:
 
 import gradio as gr
 from dotenv import load_dotenv
-from chat import answer_question
+from rag_pipeline.chat import answer_question
 
 
 load_dotenv(override=True)

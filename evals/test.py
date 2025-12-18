@@ -31,6 +31,7 @@ class TestQuestion(BaseModel):
     question: str = Field(description="The question to ask the RAG system")
     reference_answer: str = Field(description="The reference answer for this question")
     keywords: list[str] = Field(description="Keywords that must appear in retrieved context")
+    category: str = Field(description="Question category (e.g., direct_fact, spanning, temporal)")
 
 
 def load_tests() -> list[TestQuestion]:

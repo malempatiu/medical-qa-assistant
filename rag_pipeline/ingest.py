@@ -14,13 +14,13 @@ load_dotenv(override=True)
 # This directory holds the persisted embeddings and metadata for the Chroma vector store.
 # The path is constructed relative to the script's directory to ensure portability.
 # Chroma uses this directory to save and load the vector database for efficient retrieval.
-DB_NAME = str(Path(__file__).parent / "vector_db")
+DB_NAME = str(Path(__file__).parent.parent / "vector_db")
 
 # KNOWLEDGE_BASE specifies the path to the directory containing the source documents
 # that will be ingested into the knowledge base. These documents are loaded, split into chunks,
 # and embedded to create the searchable vector database. The path is relative to the script's
 # directory, allowing the knowledge base to be organized alongside the ingestion script.
-KNOWLEDGE_BASE = str(Path(__file__).parent / "knowledge-base")
+KNOWLEDGE_BASE = str(Path(__file__).parent.parent / "knowledge-base")
 
 # Specify the OpenAI model to use for potential future use in generation or other tasks.
 # Currently, this variable is defined but not used in this script.

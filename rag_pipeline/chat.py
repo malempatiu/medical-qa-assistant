@@ -17,7 +17,7 @@ MODEL = "gpt-4.1-nano"
 
 # Define the path to the vector database directory.
 # This directory contains the persisted Chroma vector store with document embeddings.
-DB_NAME = str(Path(__file__).parent / "vector_db")
+DB_NAME = str(Path(__file__).parent.parent / "vector_db")
 
 # Initialize the OpenAI embeddings model for converting text into vectors.
 # Used for semantic search and retrieval from the vector store.

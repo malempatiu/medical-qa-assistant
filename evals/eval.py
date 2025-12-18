@@ -1,6 +1,7 @@
 import sys
 import math
 from pydantic import BaseModel, Field
+from litellm import completion
 from dotenv import load_dotenv
 
 from evals.test import TestQuestion, load_tests
@@ -109,6 +110,53 @@ def evaluate_retrieval(test: TestQuestion, k: int = 10) -> RetrievalEval:
         keyword_coverage=keyword_coverage,
     )
 
+def evaluate_answer(test: TestQuestion) -> tuple[AnswerEval, str, list]:
+    """
+    Evaluate answer quality using LLM-as-a-judge (async).
+
+    Args:
+        test: TestQuestion object containing question and reference answer
+
+    Returns:
+        Tuple of (AnswerEval object, generated_answer string, retrieved_docs list)
+    """
+    # Get RAG response using shared answer module
+    generated_answer, retrieved_docs = answer_question(test.question)
+
+    # LLM judge prompt
+    judge_messages = [
+        {
+            "role": "system",
+            "content": "You are an expert evaluator assessing the quality of answers. Evaluate the generated answer by comparing it to the reference answer. Only give 5/5 scores for perfect answers.",
+        },
+        {
+            "role": "user",
+            "content": f"""Question:
+            {test.question}
+
+            Generated Answer:
+            {generated_answer}
+
+            Reference Answer:
+            {test.reference_answer}
+
+            Please evaluate the generated answer on three dimensions:
+            1. Accuracy: How factually correct is it compared to the reference answer? Only give 5/5 scores for perfect answers.
+            2. Completeness: How thoroughly does it address all aspects of the question, covering all the information from the reference answer?
+            3. Relevance: How well does it directly answer the specific question asked, giving no additional information?
+
+            Provide detailed feedback and scores from 1 (very poor) to 5 (ideal) for each dimension. If the answer is wrong, then the accuracy score must be 1.""",
+        },
+    ]
+
+    # Call LLM judge with structured outputs (async)
+    judge_response = completion(model=MODEL, messages=judge_messages, response_format=AnswerEval)
+
+    answer_eval = AnswerEval.model_validate_json(judge_response.choices[0].message.content)
+
+    return answer_eval, generated_answer, retrieved_docs
+
+
 def run_cli_evaluation(test_number: int):
     """Run evaluation for a specific test (async helper for CLI)."""
     # Load tests
@@ -140,6 +188,21 @@ def run_cli_evaluation(test_number: int):
     print(f"nDCG: {retrieval_result.ndcg:.4f}")
     print(f"Keywords Found: {retrieval_result.keywords_found}/{retrieval_result.total_keywords}")
     print(f"Keyword Coverage: {retrieval_result.keyword_coverage:.1f}%")
+
+    # Answer Evaluation
+    print(f"\n{'=' * 80}")
+    print("Answer Evaluation")
+    print(f"{'=' * 80}")
+
+    answer_result, generated_answer, retrieved_docs = evaluate_answer(test)
+
+    print(f"\nGenerated Answer:\n{generated_answer}")
+    print(f"\nFeedback:\n{answer_result.feedback}")
+    print("\nScores:")
+    print(f"  Accuracy: {answer_result.accuracy:.2f}/5")
+    print(f"  Completeness: {answer_result.completeness:.2f}/5")
+    print(f"  Relevance: {answer_result.relevance:.2f}/5")
+    print(f"\n{'=' * 80}\n")
 
 
 def main():

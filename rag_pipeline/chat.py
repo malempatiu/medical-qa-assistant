@@ -3,6 +3,10 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.messages import SystemMessage, HumanMessage, convert_to_messages
 from langchain_core.documents import Document
+from tenacity import retry, wait_exponential
+from litellm import completion
+from pydantic import BaseModel, Field
+
 
 from dotenv import load_dotenv
 
@@ -10,6 +14,8 @@ from dotenv import load_dotenv
 # Load environment variables from a .env file, overriding any existing ones.
 # This ensures API keys and configurations are properly set.
 load_dotenv(override=True)
+
+wait = wait_exponential(multiplier=1, min=10, max=240)
 
 # Specify the OpenAI model to use for generating responses.
 # This model is used for conversational AI in the chat system.
@@ -25,7 +31,7 @@ embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
 
 # Set the number of top documents to retrieve for context.
 # Higher values provide more context but may increase response time.
-RETRIEVAL_K = 10
+RETRIEVAL_K = 5
 
 # Define the system prompt for the AI assistant.
 # This prompt sets the role and behavior of the assistant, emphasizing health information retrieval.
@@ -53,6 +59,35 @@ retriever = vector_store.as_retriever()
 llm = ChatOpenAI(temperature=0, model_name=MODEL)
 
 
+class RankOrder(BaseModel):
+    order: list[int] = Field(
+        description="The order of relevance of chunks, from most relevant to least relevant, by chunk id number"
+    )
+
+@retry(wait=wait)
+def re_rank(question, chunks):
+    system_prompt = """
+You are a document re-ranker.
+You are provided with a question and a list of relevant chunks of text from a query of a knowledge base.
+The chunks are provided in the order they were retrieved; this should be approximately ordered by relevance, but you may be able to improve on that.
+You must rank order the provided chunks by relevance to the question, with the most relevant chunk first.
+Reply only with the list of ranked chunk ids, nothing else. Include all the chunk ids you are provided with, reranked.
+"""
+    user_prompt = f"The user has asked the following question:\n\n{question}\n\nOrder all the chunks of text by relevance to the question, from most relevant to least relevant. Include all the chunk ids you are provided with, reranked.\n\n"
+    user_prompt += "Here are the chunks:\n\n"
+    for i, chunk in enumerate(chunks):
+        user_prompt += f"# CHUNK ID: {i+1}:\n\n{chunk.page_content}\n\n"
+    user_prompt += "Reply only with the list of ranked chunk ids, nothing else."
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    response = completion(model=MODEL, messages=messages,
+                          response_format=RankOrder)
+    reply = response.choices[0].message.content
+    order = RankOrder.model_validate_json(reply).order
+    return [chunks[i - 1] for i in order]
+
 def fetch_context(question: str) -> list[Document]:
     """
     Retrieve relevant context documents for a given question.
@@ -67,7 +102,12 @@ def fetch_context(question: str) -> list[Document]:
     Returns:
         list[Document]: A list of relevant documents from the vector store.
     """
-    return retriever.invoke(question, k=RETRIEVAL_K)
+    chunks = retriever.invoke(question, k=RETRIEVAL_K)
+    print([chunk.id for chunk in chunks])
+    reranked_chunks = re_rank(question, chunks)
+    print([chunk.id for chunk in reranked_chunks])
+    return reranked_chunks
+
 
 
 def combined_question(question: str, history: list[dict] = []) -> str:
